@@ -55,25 +55,45 @@ sub uri_to_conninfo {
 	like($event->{reason}, qr/connection.+(fail|refuse).*127.0.0.1.*28761/i,
 		'reason has descrpitive message after connection has failed with host and port identified');
 }
+#AE::log(error => "");
+#AE::log(error => "Starting postgres");
+my $pgserv = Test::PostgreSQL->new();
+fail('start postgres: ' . $Test::postgresql::errstr) unless $pgserv;
+#AE::log(error => "Postgres started with URI: %s", $pgserv->uri);
 
 {
-	#AE::log(error => "");
-	#AE::log(error => "Starting postgres");
-	my $pgserv = Test::PostgreSQL->new();
-	fail('start postgres: ' . $Test::postgresql::errstr) unless $pgserv;
-	#AE::log(error => "Postgres started with URI: %s", $pgserv->uri);
-
-	my $pool = AnyEvent::PostgreSQL->new(
+	my $pool_size = 5;
+	my $connected = AE::cvt 1;
+	my $cv_one = AE::cvt;
+	my $cv_all = AE::cvt;
+	my $cv_conn_first = AE::cv {$connected->send}; $cv_conn_first->begin;
+	my $cv_conn_one = AE::cv {$cv_one->send}; $cv_conn_one->begin for 1..$pool_size;
+	my $cv_conn_all = AE::cv {$cv_all->send}; $cv_conn_all->begin;
+	my $pool; $pool = AnyEvent::PostgreSQL->new(
 		%{uri_to_conninfo($pgserv->uri)},
-		on_connfail => sub {fail "connection should not fail"},
-		on_connect  => my $connected = AE::cvt 1,
+		pool_size       => $pool_size,
+		on_connfail     => sub {fail "connection should not fail"},
+		on_connect      => sub { my $self = shift;
+			is($pool, $self,"pool passed as first arg to on_connect");
+			$cv_conn_first->end;
+		},
+		on_connect_one  => sub { my $self = shift;
+			fail "pool passed as first arg to on_connect_one" unless $pool == $self;
+			$cv_conn_one->end;
+		},
+		on_connect_all  => sub { my $self = shift;
+			fail "pool passed as first arg to on_connect_all" unless $pool == $self;
+			$cv_conn_all->end
+		},
 	);
 	#AE::log(error => "AnyEvent::PostgreSQL object created, call connect()");
 	$pool->connect;
 	#AE::log(error => "AnyEvent::PostgreSQL connect() returned");
-	my ($self, $event) = eval {$connected->recv;}; fail $@ if $@;
+	my ($self, $event) = eval {$connected->recv;}; fail "connected: $@" if $@;
+	($self, $event) = eval {$cv_one->recv;}; fail "connect_one: $@" if $@;
+	($self, $event) = eval {$cv_all->recv;}; fail "connect_all $@" if $@;
 	#AE::log(error => "on_connect fired");
-	is($self, $pool, 'pool object passed as first argument to connfail_callback');
+	#is($self, $pool, 'pool object passed as first argument to connfail_callback');
 }
 
 done_testing;

@@ -53,9 +53,12 @@ has login           => (is => 'rw');
 has password        => (is => 'rw');
 has on_connfail     => (is => 'rw');
 has on_connect      => (is => 'rw');
+has on_connect_one  => (is => 'rw');
+has on_connect_all  => (is => 'rw');
 has connect_timeout => (is => 'rw', default => 1);
 has _pool           => (is => 'rw', default => sub{ [] });
-has pool_size       => (is => 'rw', default => 1);
+has pool_size       => (is => 'rw', default => 5);
+has _connect_cnt    => (is => 'rw');
 
 
 sub connect{ my $self = shift;
@@ -78,15 +81,17 @@ sub create_connectors { my $self = shift;
 		connect_timeout => $self->{connect_timeout},
 	};
 	for my $i (1..$self->pool_size) {
-		#my $started = time;
 		push @{$self->{_pool}}, AnyEvent::Pg->new(
 			$conn_info,
-			timeout            => 2, # between network activiti events
+			timeout            => 2, # between network activity events
 			on_connect         => sub {
 				my $conn = shift;
-				#my $duration = time - $started;
-				#AE::log (error => "on_connect[%d]: D=%.6f %s", $i, $duration, Dumper \@_);
-				$self->{on_connect}->($self) if $self->{on_connect};
+				$self->{_connect_cnt} ++;
+				my $want_on_connect = $self->{_connect_cnt} == 1;
+				my $want_on_connect_all = $self->{_connect_cnt} == $self->{pool_size};
+				$self->{on_connect_one}->($self) if $self->{on_connect_one};
+				$self->{on_connect}->($self)     if $self->{on_connect} && $want_on_connect;
+				$self->{on_connect_all}->($self) if $self->{on_connect_all} && $want_on_connect_all;
 			},
 			on_connect_error   => sub {
 				my $conn = shift;
