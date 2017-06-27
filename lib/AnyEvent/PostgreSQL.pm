@@ -11,21 +11,26 @@ our $VERSION = 0.01;
 	use AnyEvent;
 	use AnyEvent::PostgreSQL;
 	my $pool = AnyEvent::PostgreSQL->new(
-		server        => '127.0.0.1:5432',
-		dbname        => 'testdb',
-		login         => 'PG_USER',
-		password      => 'PG_PASS',
-		timeout       => 2.0,
-		pool_capacity => 2.0,
-		on_connect => my $connected = AE::cv,
-		on_disconect => sub {
+		server            => '127.0.0.1:5432',
+		dbname            => 'testdb',
+		login             => 'PG_USER',
+		password          => 'PG_PASS',
+		timeout           => 2.0,
+		pool_size         => 5,
+		on_connect_first  => my $connected = AE::cv,
+		on_disconect_last => sub { my $pool = shift;
+			my $reason = shift;
+			warn "No more connections in pool: $reason";
 		},
-		on_connfail => sub {
+		on_connfail       => sub { my $pool = shift;
+			my $event = shift;
+			warn "Connection failed: " . $event->{reason};
 		},
 	);
 
 	$pool->connect;
-	my ($self) = $connected->recv;
+	my ($self, $desc) = $connected->recv;
+	warn "have at least one connection in pool: $desc";
 	$pool->query(q{SELECT '{"key":"value"}':jsonb}, sub {
 		my ($self, $result, $reason) = @_;
 		if ($result) {
@@ -47,20 +52,20 @@ use Mouse;
 use Time::HiRes qw(time);
 
 
-has server          => (is => 'rw', required => 1);
-has dbname          => (is => 'rw', default => '');
-has login           => (is => 'rw');
-has password        => (is => 'rw');
-has on_connfail     => (is => 'rw');
-has on_connect      => (is => 'rw');
-has on_connect_one  => (is => 'rw');
-has on_connect_all  => (is => 'rw');
+has server             => (is => 'rw', required => 1);
+has dbname             => (is => 'rw', default => '');
+has login              => (is => 'rw');
+has password           => (is => 'rw');
+has on_connfail        => (is => 'rw');
+has on_connect_first   => (is => 'rw');
+has on_connect_one     => (is => 'rw');
+has on_connect_last    => (is => 'rw');
 has on_disconnect_one  => (is => 'rw');
-has connect_timeout => (is => 'rw', default => 1);
-has _pool           => (is => 'rw', default => sub{ [] });
-has pool_size       => (is => 'rw', default => 5);
-has _connect_cnt    => (is => 'rw');
-has _conn_ok        => (is => 'rw', default => sub{ [] });
+has connect_timeout    => (is => 'rw', default => 1);
+has _pool              => (is => 'rw', default => sub{ [] });
+has pool_size          => (is => 'rw', default => 5);
+has _connect_cnt       => (is => 'rw');
+has _conn_ok           => (is => 'rw', default => sub{ [] });
 
 
 sub connect{ my $self = shift;
@@ -83,8 +88,8 @@ sub create_i_conector {
 				my $conn = shift;
 				$self->{_connect_cnt} ++;
 				$self->{_conn_ok}[$i] = 1;
-				my $want_on_connect = $self->{_connect_cnt} == 1;
-				my $want_on_connect_all = $self->{_connect_cnt} == $self->{pool_size};
+				my $first_connect = $self->{_connect_cnt} == 1;
+				my $last_connect = $self->{_connect_cnt} == $self->{pool_size};
 				my $dbc = $conn->dbc;
 				my $desc = sprintf('conn[%d] connected to %s:%s login:%s db:%s srv_ver:%s enc:%s',
 					$i,
@@ -92,15 +97,14 @@ sub create_i_conector {
 					$dbc->parameterStatus('server_version'),
 					$dbc->parameterStatus('server_encoding'),
 				);
-				$self->{on_connect_one}->($self, $desc) if $self->{on_connect_one};
-				$self->{on_connect}->($self, $desc)     if $self->{on_connect} && $want_on_connect;
-				$self->{on_connect_all}->($self, $desc) if $self->{on_connect_all} && $want_on_connect_all;
+				$self->{on_connect_one}->($self, $desc)   if $self->{on_connect_one};
+				$self->{on_connect_first}->($self, $desc) if $self->{on_connect_first} && $first_connect;
+				$self->{on_connect_last}->($self, $desc)  if $self->{on_connect_last} && $last_connect;
 			},
 			on_connect_error   => sub {
 				my $conn = shift;
 				(my $err = $conn->{dbc}->errorMessage) =~ s/[\n\s]+/ /gs;
 				my $reason = "conn[$i]: $err";
-				undef $self->{query};
 				$self->create_i_conector($i, $conn_info);
 				if ($self->{on_connfail}) {
 					$self->{on_connfail}->($self, { on_conect_error_args => \@_, reason => $reason});
@@ -111,15 +115,11 @@ sub create_i_conector {
 				my $fatal = shift; $fatal //= 0;
 				(my $err = $conn->{dbc}->errorMessage) =~ s/[\n\s]+/ /gs;
 				my $reason = "conn[$i]: $err";
-				#AE::log error =>  "$reason fatal=$fatal";
 				if ($fatal) {
 					if ($self->{_conn_ok}[$i] ) {
 						$self->create_i_conector($i, $conn_info);
-						#AE::log error =>  "connected $i";
 						$self->{on_disconnect_one}->($self, $reason) if $self->{on_disconnect_one};
-					} else {
-						#AE::log error =>  "not connected";
-					}
+					} # skip else as it is handled in on_connect_error
 				} else {
 					#warn "on_error[$i]: $reason: " . Dumper \@_;
 				}
