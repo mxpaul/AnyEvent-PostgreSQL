@@ -103,6 +103,50 @@ fail('start postgres: ' . $Test::postgresql::errstr) unless $pgserv;
 	($self, $event) = eval {$cv_all->recv;}; fail "connect_all $@" if $@;
 	#AE::log(error => "on_connect fired");
 	#is($self, $pool, 'pool object passed as first argument to connfail_callback');
+	$pool->disconnect;
+}
+
+{
+	my $pool_size = 5;
+	my $connected = AE::cvt 1;
+	my $disconnected = AE::cvt 3;
+	my $conn_info = uri_to_conninfo($pgserv->uri);
+	my $cnt_disconnected_one = 0;
+	my $pool; $pool = AnyEvent::PostgreSQL->new(
+		%{$conn_info},
+		pool_size         => $pool_size,
+		on_connfail       => sub {my $self = shift; diag $event->{reason};},
+		on_connect_all    => my $connected = AE::cvt,
+		on_disconnect_one => sub{ $disconnected->(@_) if ++ $cnt_disconnected_one == $pool_size},
+	);
+	#AE::log(error => "AnyEvent::PostgreSQL object created, call connect()");
+	$pool->connect;
+	my ($self, $event) = eval {$connected->recv;}; fail "connected: $@" if $@;
+	$pgserv->stop;
+	my ($self2, $reason) = eval {$disconnected->recv;}; fail "disconnected: $@" if $@;
+	$pgserv->start;
+	$pool->disconnect;
+}
+
+{
+	my $pool_size = 1;
+	my $conn_info = uri_to_conninfo($pgserv->uri);
+	my $pool; $pool = AnyEvent::PostgreSQL->new(
+		%{$conn_info},
+		pool_size         => $pool_size,
+		#on_connfail       => sub { AE::log error => 'connfail: %s', $_[1]->{reason};},
+		#on_connect_all    => sub { AE::log error => 'connect_all: %s', @_[1];},
+		on_connect_one    => sub { AE::log error => 'connect_one %s', @_[1];},
+		on_disconnect_one => sub { AE::log error => 'disconnect_one: %s', @_[1];},
+	);
+	#AE::log(error => "AnyEvent::PostgreSQL object created, call connect()");
+	$pool->connect;
+	my ($cb,$start,$stop);
+	$start = sub {$cb = $stop; $pgserv->start;};
+	$stop = sub {$cb = $start; $pgserv->stop;};
+	$cb = $stop;
+	my $t; $t = AE::timer 10, 10, sub { $cb->(); warn "Not T" unless $t };
+	eval { (AE::cvt 60)->recv; };
 }
 
 done_testing;

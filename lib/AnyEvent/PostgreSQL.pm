@@ -55,10 +55,12 @@ has on_connfail     => (is => 'rw');
 has on_connect      => (is => 'rw');
 has on_connect_one  => (is => 'rw');
 has on_connect_all  => (is => 'rw');
+has on_disconnect_one  => (is => 'rw');
 has connect_timeout => (is => 'rw', default => 1);
 has _pool           => (is => 'rw', default => sub{ [] });
 has pool_size       => (is => 'rw', default => 5);
 has _connect_cnt    => (is => 'rw');
+has _conn_ok        => (is => 'rw', default => sub{ [] });
 
 
 sub connect{ my $self = shift;
@@ -71,22 +73,16 @@ sub connect{ my $self = shift;
 	#$self->{_pool}->connect;
 };
 
-sub create_connectors { my $self = shift;
-	my ($host, $port) = parse_hostport($self->{server}, 5432);
-	my $conn_info = {
-		dbname          => $self->{dbname},
-		user            => $self->{login},
-		port            => $port,
-		host            => $host,
-		connect_timeout => $self->{connect_timeout},
-	};
-	for my $i (1..$self->pool_size) {
-		push @{$self->{_pool}}, AnyEvent::Pg->new(
+sub create_i_conector {
+		my ($self, $i, $conn_info) = (shift, shift, shift);
+		$self->{_conn_ok}[$i] = 0;
+		$self->{_pool}[$i] = AnyEvent::Pg->new(
 			$conn_info,
 			timeout            => 2, # between network activity events
 			on_connect         => sub {
 				my $conn = shift;
 				$self->{_connect_cnt} ++;
+				$self->{_conn_ok}[$i] = 1;
 				my $want_on_connect = $self->{_connect_cnt} == 1;
 				my $want_on_connect_all = $self->{_connect_cnt} == $self->{pool_size};
 				my $dbc = $conn->dbc;
@@ -105,16 +101,51 @@ sub create_connectors { my $self = shift;
 				(my $err = $conn->{dbc}->errorMessage) =~ s/[\n\s]+/ /gs;
 				my $reason = "conn[$i]: $err";
 				undef $self->{query};
-				$self->{on_connfail}->($self, { on_conect_error_args => \@_, reason => $reason});
+				$self->create_i_conector($i, $conn_info);
+				if ($self->{on_connfail}) {
+					$self->{on_connfail}->($self, { on_conect_error_args => \@_, reason => $reason});
+				}
 			},
-			#on_error   => sub {
-			#	my $conn = shift;
-			#	(my $err = $conn->{dbc}->errorMessage) =~ s/[\n\s]+/ /gs;
-			#	my $reason = "conn[$i]: $err";
-			#	warn "on_error[$i]: $reason: " . Dumper \@_;
-			#},
+			on_error   => sub {
+				my $conn = shift;
+				my $fatal = shift; $fatal //= 0;
+				(my $err = $conn->{dbc}->errorMessage) =~ s/[\n\s]+/ /gs;
+				my $reason = "conn[$i]: $err";
+				#AE::log error =>  "$reason fatal=$fatal";
+				if ($fatal) {
+					if ($self->{_conn_ok}[$i] ) {
+						$self->create_i_conector($i, $conn_info);
+						#AE::log error =>  "connected $i";
+						$self->{on_disconnect_one}->($self, $reason) if $self->{on_disconnect_one};
+					} else {
+						#AE::log error =>  "not connected";
+					}
+				} else {
+					#warn "on_error[$i]: $reason: " . Dumper \@_;
+				}
+			},
 		);
+}
+
+sub create_connectors { my $self = shift;
+	my ($host, $port) = parse_hostport($self->{server}, 5432);
+	my $conn_info = {
+		dbname          => $self->{dbname},
+		user            => $self->{login},
+		port            => $port,
+		host            => $host,
+		connect_timeout => $self->{connect_timeout},
+	};
+	for my $i (0 .. ($self->pool_size - 1)) {
+		$self->create_i_conector($i, $conn_info);
 	}
+}
+
+sub disconnect{ my $self = shift;
+	$self->{_pool} = [];
+	#for my $conn (@{$self->_pool}) {
+	#	$conn->dbc->finish;
+	#}
 }
 
 __PACKAGE__->meta->make_immutable();
