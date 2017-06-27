@@ -108,20 +108,27 @@ fail('start postgres: ' . $Test::postgresql::errstr) unless $pgserv;
 	my $disconnected = AE::cvt 3;
 	my $conn_info = uri_to_conninfo($pgserv->uri);
 	my $cnt_disconnected_one = 0;
+	my $cnt_disconnected_first = 0;
+	my $cnt_disconnected_last = 0;
 	my $pool; $pool = AnyEvent::PostgreSQL->new(
 		%{$conn_info},
 		pool_size         => $pool_size,
 		on_connfail       => sub {my $self = shift; diag $event->{reason};},
 		on_connect_last   => my $connected = AE::cvt,
-		on_disconnect_one => sub{ $disconnected->(@_) if ++ $cnt_disconnected_one == $pool_size},
+		on_disconnect_one => sub{$cnt_disconnected_one ++},
+		on_disconnect_first => sub{$cnt_disconnected_first ++},
+		on_disconnect_last  => sub{$cnt_disconnected_last ++; $disconnected->(@_); },
 	);
 	#AE::log(error => "AnyEvent::PostgreSQL object created, call connect()");
 	$pool->connect;
 	my ($self, $event) = eval {$connected->recv;}; fail "connected: $@" if $@;
 	$pgserv->stop;
 	my ($self2, $reason) = eval {$disconnected->recv;}; fail "disconnected: $@" if $@;
-	$pgserv->start;
+	is($cnt_disconnected_last, 1, 'on_disconnect_last called once');
+	is($cnt_disconnected_first, 1, 'on_disconnect_first called once');
+	is($cnt_disconnected_one, $pool->pool_size, 'on_disconnect_first called for each connection in pool');
 	$pool->disconnect;
+	$pgserv->start;
 }
 
 {

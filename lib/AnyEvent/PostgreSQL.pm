@@ -52,20 +52,22 @@ use Mouse;
 use Time::HiRes qw(time);
 
 
-has server             => (is => 'rw', required => 1);
-has dbname             => (is => 'rw', default => '');
-has login              => (is => 'rw');
-has password           => (is => 'rw');
-has on_connfail        => (is => 'rw');
-has on_connect_first   => (is => 'rw');
-has on_connect_one     => (is => 'rw');
-has on_connect_last    => (is => 'rw');
-has on_disconnect_one  => (is => 'rw');
-has connect_timeout    => (is => 'rw', default => 1);
-has _pool              => (is => 'rw', default => sub{ [] });
-has pool_size          => (is => 'rw', default => 5);
-has _connect_cnt       => (is => 'rw');
-has _conn_ok           => (is => 'rw', default => sub{ [] });
+has server              => (is => 'rw', required => 1);
+has dbname              => (is => 'rw', default => '');
+has login               => (is => 'rw');
+has password            => (is => 'rw');
+has on_connfail         => (is => 'rw');
+has on_connect_first    => (is => 'rw');
+has on_connect_one      => (is => 'rw');
+has on_connect_last     => (is => 'rw');
+has on_disconnect_one   => (is => 'rw');
+has on_disconnect_first => (is => 'rw');
+has on_disconnect_last  => (is => 'rw');
+has connect_timeout     => (is => 'rw', default => 1);
+has _pool               => (is => 'rw', default => sub{ [] });
+has pool_size           => (is => 'rw', default => 5);
+has _connect_cnt        => (is => 'rw');
+has _conn_ok            => (is => 'rw', default => sub{ [] });
 
 
 sub connect{ my $self = shift;
@@ -117,8 +119,17 @@ sub create_i_conector {
 				my $reason = "conn[$i]: $err";
 				if ($fatal) {
 					if ($self->{_conn_ok}[$i] ) {
+						my $last_disconnect = $self->{_connect_cnt} == 1;
+						my $first_disconnect = $self->{_connect_cnt} == $self->{pool_size};
+						$self->{_connect_cnt} --;
 						$self->create_i_conector($i, $conn_info);
 						$self->{on_disconnect_one}->($self, $reason) if $self->{on_disconnect_one};
+						if ($first_disconnect && $self->{on_disconnect_first}) {
+							$self->{on_disconnect_first}->($self, $reason) ;
+						}
+						if ($last_disconnect && $self->{on_disconnect_last}) {
+							$self->{on_disconnect_last}->($self, $reason) ;
+						}
 					} # skip else as it is handled in on_connect_error
 				} else {
 					#warn "on_error[$i]: $reason: " . Dumper \@_;
