@@ -89,9 +89,16 @@ sub create_connectors { my $self = shift;
 				$self->{_connect_cnt} ++;
 				my $want_on_connect = $self->{_connect_cnt} == 1;
 				my $want_on_connect_all = $self->{_connect_cnt} == $self->{pool_size};
-				$self->{on_connect_one}->($self) if $self->{on_connect_one};
-				$self->{on_connect}->($self)     if $self->{on_connect} && $want_on_connect;
-				$self->{on_connect_all}->($self) if $self->{on_connect_all} && $want_on_connect_all;
+				my $dbc = $conn->dbc;
+				my $desc = sprintf('conn[%d] connected to %s:%s login:%s db:%s srv_ver:%s enc:%s',
+					$i,
+					(map {$dbc->$_//''} qw(host port user db)),
+					$dbc->parameterStatus('server_version'),
+					$dbc->parameterStatus('server_encoding'),
+				);
+				$self->{on_connect_one}->($self, $desc) if $self->{on_connect_one};
+				$self->{on_connect}->($self, $desc)     if $self->{on_connect} && $want_on_connect;
+				$self->{on_connect_all}->($self, $desc) if $self->{on_connect_all} && $want_on_connect_all;
 			},
 			on_connect_error   => sub {
 				my $conn = shift;

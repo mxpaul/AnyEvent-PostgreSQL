@@ -69,16 +69,25 @@ fail('start postgres: ' . $Test::postgresql::errstr) unless $pgserv;
 	my $cv_conn_first = AE::cv {$connected->send}; $cv_conn_first->begin;
 	my $cv_conn_one = AE::cv {$cv_one->send}; $cv_conn_one->begin for 1..$pool_size;
 	my $cv_conn_all = AE::cv {$cv_all->send}; $cv_conn_all->begin;
+	my $conn_info = uri_to_conninfo($pgserv->uri);
 	my $pool; $pool = AnyEvent::PostgreSQL->new(
-		%{uri_to_conninfo($pgserv->uri)},
+		%{$conn_info},
 		pool_size       => $pool_size,
-		on_connfail     => sub {fail "connection should not fail"},
+		on_connfail     => sub { my $self = shift;
+			$event = shift;
+			fail "connection error: " . $event->{reason};
+		},
 		on_connect      => sub { my $self = shift;
 			is($pool, $self,"pool passed as first arg to on_connect");
 			$cv_conn_first->end;
 		},
 		on_connect_one  => sub { my $self = shift;
 			fail "pool passed as first arg to on_connect_one" unless $pool == $self;
+			my $desc = shift;
+			diag $desc;
+			like($desc,qr/$conn_info->{host}.*$conn_info->{port}/, 'on_connect: descriptions contains host');
+			like($desc,qr/$conn_info->{dbname}/, 'on_connect: descriptions contains database name');
+			like($desc,qr/$conn_info->{login}/, 'on_connect: descriptions contains user name');
 			$cv_conn_one->end;
 		},
 		on_connect_all  => sub { my $self = shift;
