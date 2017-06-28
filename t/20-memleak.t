@@ -51,10 +51,12 @@ BAIL_OUT('Can not start PostgreSQL server: ' . $Test::postgresql::errstr) unless
 	);
 	$pool->connect;
 	my ($self, $desc) = eval {$connected->recv; }; fail "connect fail: $@" if $@;
-	AE::log error => 'connected: %s', $desc;
+	#AE::log error => 'connected: %s', $desc;
 	$pool->disconnect;
 	my ($self, $desc) = eval {$disconnected->recv; }; fail "disconnect fail: $@" if $@;
-	AE::log error => 'disconnected: %s', $desc;
+	#AE::log error => 'disconnected: %s', $desc;
+	#$pool->DESTROY;
 }
+diag "At this point \$pool should be destroyed";
 ok 1;
 done_testing;

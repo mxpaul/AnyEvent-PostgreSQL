@@ -51,8 +51,8 @@ use AnyEvent::Socket qw(parse_hostport);
 use AnyEvent::Pg::Pool;
 use Mouse;
 use Time::HiRes qw(time);
-use Scalar::Util qw(weaken);
-use Guard;
+#use Scalar::Util qw(weaken);
+#use Guard;
 
 
 has server              => (is => 'rw', required => 1);
@@ -75,10 +75,10 @@ has _conn_ok            => (is => 'rw', default => sub{ [] });
 has name                => (is => 'rw', default => 'noname');
 has _want_connect       => (is => 'rw', default => 0);
 
-sub BUILD { my $self = shift;
-	my $n=$self->{name};
-	#$self->{_guard} = guard sub { warn  "$n AE:PostgreSQL guard"};
-}
+#sub BUILD { my $self = shift;
+#	my $n=$self->{name};
+#	$self->{_guard} = guard sub { warn  "$n AE:PostgreSQL guard"};
+#}
 
 
 sub connect{ my $self = shift;
@@ -95,6 +95,8 @@ sub connect{ my $self = shift;
 
 sub create_i_conector {
 		my ($self, $i, $conn_info) = (shift, shift, shift);
+		#weaken($self);
+		my ($cb1, $cb2, $cb3);
 		$self->{_conn_ok}[$i] = 0;
 		$self->{_pool}[$i] = AnyEvent::Pg->new(
 			$conn_info,
@@ -112,12 +114,13 @@ sub create_i_conector {
 					$dbc->parameterStatus('server_version'),
 					$dbc->parameterStatus('server_encoding'),
 				);
-				my ($cb1, $cb2, $cb3);
-				$cb1 = $self->{on_connect_one} and $cb1->($self, $desc);
+				$cb1->($self, $desc) if $cb1 = $self->{on_connect_one};
 				if ($first_connect) {
-					$cb2 = $self->{on_connect_first} and $cb2->($self, $desc);
+					$cb2->($self, $desc) if $cb2 = $self->{on_connect_first};
 				}
-				$cb3 = $self->{on_connect_last} and $cb3->($self, $desc) if $last_connect;
+				if ($last_connect) {
+					$cb3->($self, $desc) if $cb3 = $self->{on_connect_last};
+				}
 			},
 			on_connect_error   => sub {
 				my $conn = shift;
@@ -166,7 +169,7 @@ sub create_connectors { my $self = shift;
 		host            => $host,
 		connect_timeout => $self->{connect_timeout},
 	};
-	for my $i (0 .. ($self->pool_size - 1)) {
+	for (my $i = 0; $i < $self->pool_size; $i++) {
 		$self->create_i_conector($i, $conn_info);
 	}
 }
@@ -186,6 +189,7 @@ sub _clear_state{ my $self = shift;
 sub DEMOLISH { my $self = shift or return;
 	#warn $self->{name} . " AE::PostgreSQL DEMOLISH";
 	$self->_clear_state;
+	delete $self->{$_} for qw(on_connect_first on_connect_last on_connect_one);
 }
 
 __PACKAGE__->meta->make_immutable();
