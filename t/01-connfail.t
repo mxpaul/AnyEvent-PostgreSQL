@@ -16,6 +16,7 @@ use Test::PostgreSQL;
 use Carp;
 use URI;
 use Data::Dumper;
+#use Devel::Leak;
 
 use AnyEvent::PostgreSQL;
 
@@ -33,9 +34,17 @@ sub uri_to_conninfo {
 	}
 }
 
+#my $handle;
+#my $count = Devel::Leak::NoteSV($handle);
+#diag "Count at start: $count";
+#$count = Devel::Leak::CheckSV($handle);
+#diag "Count after code: $count";
+#use Devel::FindRef;
 {
 	my $addr = '127.0.0.1:28761';
-	my $pool = AnyEvent::PostgreSQL->new(
+	my $pool;
+	$pool = AnyEvent::PostgreSQL->new(
+		name            => 'wrongport',
 		server          => $addr,
 		dbname          => 'testdb',
 		login           => 'PG_USER',
@@ -54,12 +63,18 @@ sub uri_to_conninfo {
 	is(ref $event, 'HASH', 'connfail returns event description as HASH');
 	like($event->{reason}, qr/connection.+(fail|refuse).*127.0.0.1.*28761/i,
 		'reason has descrpitive message after connection has failed with host and port identified');
+	$pool->disconnect;
+	## ##warn "!!!!!!!!!!!!!!!" .Devel::FindRef::track \$pool;
+	## ##@references = Devel::FindRef::find \$pool;
+	## ##for my $item (@references) {
+	## ##	my $ref = Devel::FindRef::ptr2ref($item->[1]);
+	## ##	warn $ref;
+	## ##}
+	#undef $pool;
 }
-#AE::log(error => "");
-#AE::log(error => "Starting postgres");
+
 my $pgserv = Test::PostgreSQL->new();
 fail('start postgres: ' . $Test::postgresql::errstr) unless $pgserv;
-#AE::log(error => "Postgres started with URI: %s", $pgserv->uri);
 
 {
 	my $pool_size = 5;
@@ -72,6 +87,7 @@ fail('start postgres: ' . $Test::postgresql::errstr) unless $pgserv;
 	my $conn_info = uri_to_conninfo($pgserv->uri);
 	my $pool; $pool = AnyEvent::PostgreSQL->new(
 		%{$conn_info},
+		name            => 'test1',
 		pool_size       => $pool_size,
 		on_connfail     => sub { my $self = shift;
 			$event = shift;
@@ -84,7 +100,7 @@ fail('start postgres: ' . $Test::postgresql::errstr) unless $pgserv;
 		on_connect_one  => sub { my $self = shift;
 			is($self, $pool, "pool passed as first arg to on_connect_one");
 			my $desc = shift;
-			diag $desc;
+			diag "connect_one desc: $desc";
 			like($desc,qr/$conn_info->{host}.*$conn_info->{port}/, 'on_connect_one: descriptions contains host');
 			like($desc,qr/$conn_info->{dbname}/, 'on_connect_one: descriptions contains database name');
 			like($desc,qr/$conn_info->{login}/, 'on_connect_one: descriptions contains user name');
@@ -112,8 +128,9 @@ fail('start postgres: ' . $Test::postgresql::errstr) unless $pgserv;
 	my $cnt_disconnected_last = 0;
 	my $pool; $pool = AnyEvent::PostgreSQL->new(
 		%{$conn_info},
+		name            => 'test2',
 		pool_size         => $pool_size,
-		on_connfail       => sub {my $self = shift; diag $event->{reason};},
+		on_connfail       => sub {my $self = shift; diag 'connfail: ' . $event->{reason};},
 		on_connect_last   => my $connected = AE::cvt,
 		on_disconnect_one => sub{$cnt_disconnected_one ++},
 		on_disconnect_first => sub{$cnt_disconnected_first ++},
@@ -136,6 +153,7 @@ fail('start postgres: ' . $Test::postgresql::errstr) unless $pgserv;
 	my $conn_info = uri_to_conninfo($pgserv->uri);
 	my $pool; $pool = AnyEvent::PostgreSQL->new(
 		%{$conn_info},
+		name              => 'test3',
 		pool_size         => $pool_size,
 		#on_connfail       => sub { AE::log error => 'connfail: %s', $_[1]->{reason};},
 		#on_connect_all    => sub { AE::log error => 'connect_all: %s', @_[1];},
@@ -148,8 +166,8 @@ fail('start postgres: ' . $Test::postgresql::errstr) unless $pgserv;
 	$start = sub {$cb = $stop; $pgserv->start;};
 	$stop = sub {$cb = $start; $pgserv->stop;};
 	$cb = $stop;
-	my $t; $t = AE::timer 10, 10, sub { $cb->(); warn "Not T" unless $t };
-	eval { (AE::cvt 60)->recv; };
+	my $t; $t = AE::timer 0.01, 10, sub { $cb->(); warn "Not T" unless $t };
+	eval { (AE::cvt 6)->recv; };
 }
 
 done_testing;

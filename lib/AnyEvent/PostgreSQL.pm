@@ -45,32 +45,45 @@ AnyEvent::PostgreSQL - 15-th competing Postgres connector
 
 =cut
 
+use AnyEvent;
 use Data::Dumper;
 use AnyEvent::Socket qw(parse_hostport);
 use AnyEvent::Pg::Pool;
 use Mouse;
 use Time::HiRes qw(time);
+use Scalar::Util qw(weaken);
+use Guard;
 
 
 has server              => (is => 'rw', required => 1);
 has dbname              => (is => 'rw', default => '');
 has login               => (is => 'rw');
 has password            => (is => 'rw');
-has on_connfail         => (is => 'rw');
-has on_connect_first    => (is => 'rw');
-has on_connect_one      => (is => 'rw');
-has on_connect_last     => (is => 'rw');
-has on_disconnect_one   => (is => 'rw');
-has on_disconnect_first => (is => 'rw');
-has on_disconnect_last  => (is => 'rw');
+has on_connfail         => (is => 'rw', weak_ref => 0);
+has on_connect_first    => (is => 'rw', weak_ref => 0);
+has on_connect_one      => (is => 'rw', weak_ref => 0);
+has on_connect_last     => (is => 'rw', weak_ref => 0);
+has on_disconnect_one   => (is => 'rw', weak_ref => 0);
+has on_disconnect_first => (is => 'rw', weak_ref => 0);
+has on_disconnect_last  => (is => 'rw', weak_ref => 0);
 has connect_timeout     => (is => 'rw', default => 1);
 has _pool               => (is => 'rw', default => sub{ [] });
 has pool_size           => (is => 'rw', default => 5);
 has _connect_cnt        => (is => 'rw');
 has _conn_ok            => (is => 'rw', default => sub{ [] });
+#has _guard              => (is => 'rw');
+has name                => (is => 'rw', default => 'noname');
+has _want_connect       => (is => 'rw', default => 0);
+
+sub BUILD { my $self = shift;
+	my $n=$self->{name};
+	#$self->{_guard} = guard sub { warn  "$n AE:PostgreSQL guard"};
+}
 
 
 sub connect{ my $self = shift;
+	return (0, "already connecting") if $self->{_want_connect};
+	$self->{_want_connect} = 1;
 	$self->create_connectors;
 	#$self->{query} = $self->{_pool}[0]->push_query(
 	#	query     => 'SELECT 1',
@@ -99,17 +112,20 @@ sub create_i_conector {
 					$dbc->parameterStatus('server_version'),
 					$dbc->parameterStatus('server_encoding'),
 				);
-				$self->{on_connect_one}->($self, $desc)   if $self->{on_connect_one};
-				$self->{on_connect_first}->($self, $desc) if $self->{on_connect_first} && $first_connect;
-				$self->{on_connect_last}->($self, $desc)  if $self->{on_connect_last} && $last_connect;
+				my ($cb1, $cb2, $cb3);
+				$cb1 = $self->{on_connect_one} and $cb1->($self, $desc);
+				if ($first_connect) {
+					$cb2 = $self->{on_connect_first} and $cb2->($self, $desc);
+				}
+				$cb3 = $self->{on_connect_last} and $cb3->($self, $desc) if $last_connect;
 			},
 			on_connect_error   => sub {
 				my $conn = shift;
 				(my $err = $conn->{dbc}->errorMessage) =~ s/[\n\s]+/ /gs;
 				my $reason = "conn[$i]: $err";
-				$self->create_i_conector($i, $conn_info);
+				$self->create_i_conector($i, $conn_info) if $self->{_want_connect};
 				if ($self->{on_connfail}) {
-					$self->{on_connfail}->($self, { on_conect_error_args => \@_, reason => $reason});
+					$self->{on_connfail}->($self, {reason => $reason});
 				}
 			},
 			on_error   => sub {
@@ -118,17 +134,20 @@ sub create_i_conector {
 				(my $err = $conn->{dbc}->errorMessage) =~ s/[\n\s]+/ /gs;
 				my $reason = "conn[$i]: $err";
 				if ($fatal) {
-					if ($self->{_conn_ok}[$i] ) {
+					if ($self->{_conn_ok}[$i]) {
 						my $last_disconnect = $self->{_connect_cnt} == 1;
 						my $first_disconnect = $self->{_connect_cnt} == $self->{pool_size};
 						$self->{_connect_cnt} --;
-						$self->create_i_conector($i, $conn_info);
+						if ($self->{_want_connect}) {
+							$self->create_i_conector($i, $conn_info);
+						}
 						$self->{on_disconnect_one}->($self, $reason) if $self->{on_disconnect_one};
 						if ($first_disconnect && $self->{on_disconnect_first}) {
 							$self->{on_disconnect_first}->($self, $reason) ;
 						}
-						if ($last_disconnect && $self->{on_disconnect_last}) {
-							$self->{on_disconnect_last}->($self, $reason) ;
+						if ($last_disconnect){
+							$self->_clear_state;
+							$self->{on_disconnect_last}->($self, $reason) if $self->{on_disconnect_last};
 						}
 					} # skip else as it is handled in on_connect_error
 				} else {
@@ -153,10 +172,20 @@ sub create_connectors { my $self = shift;
 }
 
 sub disconnect{ my $self = shift;
+	$self->{_want_connect} = 0;
+	for my $conn (@{$self->_pool}) {
+		$conn->abort_all;
+	}
+	$self->_clear_state;
+}
+
+sub _clear_state{ my $self = shift;
 	$self->{_pool} = [];
-	#for my $conn (@{$self->_pool}) {
-	#	$conn->dbc->finish;
-	#}
+}
+
+sub DEMOLISH { my $self = shift or return;
+	#warn $self->{name} . " AE::PostgreSQL DEMOLISH";
+	$self->_clear_state;
 }
 
 __PACKAGE__->meta->make_immutable();
