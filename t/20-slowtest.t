@@ -1,38 +1,16 @@
 #!/usr/bin/env perl
 use FindBin qw($Bin);
-use lib "$Bin/../lib";
+use lib ("$Bin/../lib", "$Bin/lib");
 use Test::More;
 
-use AnyEvent;
-sub AE::cvt(;$) { my $delay = (shift) // 1;
-	my ($cv, $t);
-	AE::now_update;
-	$t = AE::timer $delay, 0, sub {undef $t; $cv->croak("cvt: timeout after $delay seconds")};
-	$cv = AE::cv sub {undef $t};
-	return $cv;
-}
+use Test::AE; # AE::cvt
+use Test::Helper;
 
 use Test::PostgreSQL;
-use Carp;
-use URI;
 use Data::Dumper;
 #use Devel::Leak;
 
 use AnyEvent::PostgreSQL;
-
-sub uri_to_conninfo {
-	my $uri = shift or croak 'Need uri';
-	my $u = URI->new($uri);
-	$u->scheme('http');
-	my ($login, $password) = split(':', $u->userinfo);
-	(my $dbname = $u->path) =~ s{/}{}g;
-	{
-		server        => $u->host_port(),
-		dbname        => $dbname,
-		login         => $login,
-		password      => $password//'',
-	}
-}
 
 my $pgserv = Test::PostgreSQL->new();
 BAIL_OUT('Can not start PostgreSQL server: ' . $Test::postgresql::errstr) unless $pgserv;
