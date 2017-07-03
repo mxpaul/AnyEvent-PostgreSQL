@@ -51,6 +51,7 @@ use AnyEvent::Socket qw(parse_hostport);
 use AnyEvent::Pg::Pool;
 use Mouse;
 use Time::HiRes qw(time);
+use Carp;
 #use Scalar::Util qw(weaken);
 #use Guard;
 
@@ -179,6 +180,11 @@ sub disconnect{ my $self = shift;
 		$conn->abort_all if $conn;
 	}
 	$self->_clear_state;
+}
+
+sub push_query {
+	my $cb = pop or croak 'Need callback';
+	AE::postpone { $cb->({error => 0, result => {}})};
 }
 
 sub _clear_state{ my $self = shift;
