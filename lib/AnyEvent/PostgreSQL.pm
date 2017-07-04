@@ -52,6 +52,7 @@ use AnyEvent::Pg::Pool;
 use Mouse;
 use Time::HiRes qw(time);
 use Carp;
+use Pg::PQ qw(:pgres);
 #use Scalar::Util qw(weaken);
 #use Guard;
 
@@ -182,9 +183,47 @@ sub disconnect{ my $self = shift;
 	$self->_clear_state;
 }
 
-sub push_query {
+sub push_query { my $self = shift;
+	my $query = shift or croak 'need query hash';
 	my $cb = pop or croak 'Need callback';
-	AE::postpone { $cb->({error => 0, result => {}})};
+	my @available = grep {$_->queue_size() < 3} @{$self->{_pool}};
+	#if (@available == 0){
+	#	AE::postpone { $cb->({error => 1, reason => 'all connections busy'})};
+	#	return;
+	#}
+	my $conn = @available[rand 0+@available];
+	my %state;
+	my $res = {error => 0, fatal => 0, result => []};
+	$state{query} = $conn->push_query(
+		query     => $query,
+		on_error  => sub {
+			my $conn = shift;
+			(my $err = $conn->{dbc}->errorMessage) =~ s/[\n\s]+/ /gs;
+			$res->{error} = 1; $res->{reason} = $err;
+			#warn "on_error: " . Dumper \@_;
+		},
+		on_result => sub { my $conn = shift;
+			my $pgres = shift;
+			my $status = $pgres->status;
+			if ($status == PGRES_FATAL_ERROR) {
+				$res->{error} = 1; $res->{fatal} = 1;
+				#$res->{reason} = $pgres->errorMessage;
+				$res->{reason} = $pgres->errorField('message_primary');
+				#$res->{reason} = $pgres->errorDescription;
+			} elsif ($status == PGRES_COMMAND_OK || $status == PGRES_TUPLES_OK) {
+				push @{$res->{result}}, $pgres;
+			} else {
+				$res->{error} = 1;
+				$res->{reason} = $pgres->errorField('message_primary');
+			}
+			#warn "on_result " . Dumper \$pgres;
+		},
+		on_done   => sub { my $conn = shift;
+			return unless %state; %state = ();
+			#warn "on_done " . Dumper \@_;
+			$cb->($res);
+		},
+	);
 }
 
 sub _clear_state{ my $self = shift;

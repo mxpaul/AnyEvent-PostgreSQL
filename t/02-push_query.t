@@ -16,10 +16,6 @@ use Test::Deep;
 
 use AnyEvent::PostgreSQL;
 
-my $pgserv = Test::PostgreSQL->new();
-BAIL_OUT('Can not start PostgreSQL server: ' . $Test::postgresql::errstr) unless $pgserv;
-my $conn_info = uri_to_conninfo($pgserv->uri);
-
 sub setup_postgres_db {
 	my $pgserv = shift or croak 'Need PostgreSQL dsn';
 	eval {
@@ -31,7 +27,7 @@ sub setup_postgres_db {
 		$sth = "CREATE TABLE test (id integer primary key DEFAULT nextval('seq_test'), data text)";
 		$rv  = $dbh->do($sth);
 		$sth = 'insert INTO test (data) VALUES (?)';
-		my $test_data = 'TEST TEST DATA';
+		my $test_data = '{"test": "data"}';
 		$rv  = $dbh->do($sth, undef, $test_data);
 		$sth = 'select * FROM test LIMIT 1';
 		$rv  = $dbh->do($sth, undef);
@@ -39,6 +35,31 @@ sub setup_postgres_db {
 		cmp_deeply($hash_ref, {id => 1, data => $test_data});
 	}; return (0, "db setup error: $@") if $@;
 	return 1;
+}
+
+my $pgserv = Test::PostgreSQL->new();
+BAIL_OUT('Can not start PostgreSQL server: ' . $Test::postgresql::errstr) unless $pgserv;
+my $conn_info = uri_to_conninfo($pgserv->uri);
+my ($success, $err) = setup_postgres_db($pgserv);
+ok($success) or BAIL_OUT "setup_postgres_db: $err";
+
+{
+	my $pool; $pool = AnyEvent::PostgreSQL->new(
+		%{$conn_info},
+		name              => 'AEPQ',
+		on_connfail       => sub {$event = shift; diag "connfail: " . $event->{reason}; },
+		on_connect_last   => my $connected = AE::cvt,
+		on_disconnect_one => sub {$event = shift; diag "disconnect: " . $event->{reason}; },
+	);
+	$pool->connect; $connected->recv;
+
+	my $query = [q{select * from test where id = $1}, 1];
+	$pool->push_query($query, my $done = AE::cvt);
+	my ($res, @rest) = $done->recv;
+	cmp_deeply($res, superhashof({error => 0, result => ignore() }), 'push_query select success');
+	#diag 'Result array: ' . Dumper $res->{result};
+	my $PgRes = $res->{result}[0];
+	is($PgRes->status(), Pg::PQ::PGRES_TUPLES_OK, 'select returns tuples') or diag $PgRes->errorMessage;
 }
 
 {
@@ -50,16 +71,35 @@ sub setup_postgres_db {
 		on_disconnect_one => sub {$event = shift; diag "disconnect: " . $event->{reason}; },
 	);
 	$pool->connect; $connected->recv;
-	my ($success, $err) = setup_postgres_db($pgserv);
-	ok($success) or diag "setup_postgres_db: $err";
 
-	my $query = {
-		sql  => 'select * from test where id = ?',
-		args => [1],
-	};
+	my $query_syntax_error = [q{select * fORm test where id = $1}, 1];
+	$pool->push_query($query_syntax_error, my $done = AE::cvt);
+	my ($res, @rest) = $done->recv;
+	my $expected_response = superhashof({error => 1, fatal => 1, reason => re(qr/syntax.*fORm/)});
+	cmp_deeply($res, $expected_response, 'push_query select fatal error due to syntax error')
+		or diag Dumper $res;
+	#diag 'Result array: ' . Dumper $res->{result};
+}
+
+{
+	my $pool; $pool = AnyEvent::PostgreSQL->new(
+		%{$conn_info},
+		name              => 'AEPQ',
+		on_connfail       => sub {$event = shift; diag "connfail: " . $event->{reason}; },
+		on_connect_last   => my $connected = AE::cvt,
+		on_disconnect_one => sub {$event = shift; diag "disconnect: " . $event->{reason}; },
+	);
+	$pool->connect; $connected->recv;
+
+	my $test_data = 'NEWTESTDATA';
+	my $query = [q{update test set data = $2 where id = $1}, 1, $test_data ];
 	$pool->push_query($query, my $done = AE::cvt);
 	my ($res, @rest) = $done->recv;
-	cmp_deeply($res, superhashof({error => 0, result => ignore() }), 'push_query select success');
+	my $expected_response = superhashof({error => 0, fatal => 0, result => ignore()});
+	cmp_deeply($res, $expected_response, 'push_query select fatal error due to syntax error')
+		or diag Dumper $res;
+	#is($PgRes->status(), Pg::PQ::PGRES_TUPLES_OK, 'update returns') or diag $PgRes->errorMessage;
+	#diag 'Result array: ' . Dumper $res->{result};
 }
 
 done_testing;
