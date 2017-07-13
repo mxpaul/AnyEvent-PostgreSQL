@@ -3,7 +3,7 @@
 %{!?scl:%global pkg_name %{_distribution}}
 
 Name:           %{?scl_prefix}perl-%{_distribution}
-Version:        0.01
+Version:        0.02
 Release:        2%{?dist}
 Summary:        Async PostgreSQL connector for perl5 with convient interface
 License:        OSI-Approved
@@ -14,7 +14,6 @@ BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 BuildArch:      noarch
 BuildRequires:  %{?scl_prefix}perl(AnyEvent)
 BuildRequires:  %{?scl_prefix}perl(AnyEvent::Pg)
-BuildRequires:  %{?scl_prefix}perl(AnyEvent::Socket)
 BuildRequires:  %{?scl_prefix}perl(DBI)
 BuildRequires:  %{?scl_prefix}perl(ExtUtils::MakeMaker)
 BuildRequires:  %{?scl_prefix}perl(Mouse)
@@ -29,7 +28,6 @@ BuildRequires:  postgresql95
 BuildRequires:  postgresql95-server
 Requires:       %{?scl_prefix}perl(AnyEvent)
 Requires:       %{?scl_prefix}perl(AnyEvent::Pg)
-Requires:       %{?scl_prefix}perl(AnyEvent::Socket)
 Requires:       %{?scl_prefix}perl(Mouse)
 Requires:       %{?scl_prefix}perl(Pg::PQ)
 Requires:       %{?scl_prefix}perl(Time::HiRes)
