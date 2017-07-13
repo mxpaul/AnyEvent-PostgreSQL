@@ -12,7 +12,7 @@ our $VERSION = 0.01;
 	use AnyEvent::PostgreSQL;
 	my $pool = AnyEvent::PostgreSQL->new(
 		conn_info => {
-			host            => '127.0.0.1',
+			hostaddr        => '127.0.0.1',
 			port            => 5432,
 			dbname          => 'testdb',
 			user            => 'PG_USER',
@@ -160,6 +160,7 @@ sub create_connectors { my $self = shift;
 		%{$self->{conn_info}},
 		connect_timeout => $self->{connect_timeout},
 	};
+	$conn_info->{host}//= $conn_info->{hostaddr};
 	for (my $i = 0; $i < $self->pool_size; $i++) {
 		$self->create_i_conector($i, $conn_info);
 	}

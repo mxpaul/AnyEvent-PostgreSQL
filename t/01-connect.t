@@ -32,10 +32,6 @@ use AnyEvent::PostgreSQL;
 		on_connfail     => (my $connfail = AE::cvt),
 	);
 	cmp_deeply($pool->conn_info, $conn_info, 'conn_info structure kept in pool object');
-	#is($pool->server, $addr, 'new() arg server is stored in object');
-	#is($pool->dbname, 'testdb', 'new() arg dbname is stored in object');
-	#is($pool->login, 'PG_USER', 'new() arg login is stored in object');
-	#is($pool->password, 'PG_PASS', 'new() arg password is stored in object');
 	$pool->connect;
 
 	my ($event) = eval {$connfail->recv;}; fail $@ if $@;
