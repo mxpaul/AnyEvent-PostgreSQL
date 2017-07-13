@@ -4,7 +4,7 @@
       "Author <mmonk@cpan.org>"
    ],
    "dynamic_config" : 0,
-   "generated_by" : "ExtUtils::MakeMaker version 7.1, CPAN::Meta::Converter version 2.150005",
+   "generated_by" : "ExtUtils::MakeMaker version 7.24, CPAN::Meta::Converter version 2.143240",
    "license" : [
       "unknown"
    ],
@@ -32,11 +32,27 @@
       },
       "runtime" : {
          "requires" : {
-            "AnyEvent::Pg::Pool" : "4"
+            "AnyEvent" : "0",
+            "AnyEvent::Pg::Pool" : "0",
+            "Carp" : "0",
+            "Data::Dumper" : "0",
+            "FindBin" : "0",
+            "Mouse" : "0",
+            "Time::HiRes" : "0"
+         }
+      },
+      "test" : {
+         "requires" : {
+            "DBD::Pg" : "0",
+            "DBI" : "0",
+            "Exporter" : "0",
+            "Test::Deep" : "0",
+            "Test::Harness" : "0",
+            "Test::More" : "0",
+            "Test::PostgreSQL" : "0"
          }
       }
    },
    "release_status" : "stable",
-   "version" : "0.01",
-   "x_serialization_backend" : "JSON::PP version 2.27300"
+   "version" : "0.02"
 }
