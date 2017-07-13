@@ -13,9 +13,10 @@ sub uri_to_conninfo {
 	my ($login, $password) = split(':', $u->userinfo);
 	(my $dbname = $u->path) =~ s{/}{}g;
 	{
-		server        => $u->host_port(),
+		hostaddr      => $u->host(),
+		port          => $u->port(),
 		dbname        => $dbname,
-		login         => $login,
+		user          => $login,
 		password      => $password//'',
 	}
 }
