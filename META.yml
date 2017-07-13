@@ -3,6 +3,7 @@ abstract: '15-th competing Postgres connector'
 author:
   - 'Author <mmonk@cpan.org>'
 build_requires:
+  DBD::Pg: '0'
   DBI: '0'
   Exporter: '0'
   ExtUtils::MakeMaker: '0'
@@ -28,11 +29,10 @@ no_index:
 requires:
   AnyEvent: '0'
   AnyEvent::Pg: '0'
-  AnyEvent::Socket: '0'
   Carp: '0'
   Data::Dumper: '0'
   Mouse: '0'
   Pg::PQ: '0'
   Time::HiRes: '0'
-version: '0.01'
+version: '0.02'
 x_serialization_backend: 'CPAN::Meta::YAML version 0.016'

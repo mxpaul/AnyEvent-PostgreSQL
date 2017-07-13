@@ -22,6 +22,7 @@
    "prereqs" : {
       "build" : {
          "requires" : {
+            "DBD::Pg" : "0",
             "DBI" : "0",
             "Exporter" : "0",
             "ExtUtils::MakeMaker" : "0",
@@ -42,7 +43,6 @@
          "requires" : {
             "AnyEvent" : "0",
             "AnyEvent::Pg" : "0",
-            "AnyEvent::Socket" : "0",
             "Carp" : "0",
             "Data::Dumper" : "0",
             "Mouse" : "0",
@@ -52,6 +52,6 @@
       }
    },
    "release_status" : "stable",
-   "version" : "0.01",
+   "version" : "0.02",
    "x_serialization_backend" : "JSON::PP version 2.27300"
 }
