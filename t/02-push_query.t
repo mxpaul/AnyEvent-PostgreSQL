@@ -45,7 +45,7 @@ ok($success) or BAIL_OUT "setup_postgres_db: $err";
 
 {
 	my $pool; $pool = AnyEvent::PostgreSQL->new(
-		%{$conn_info},
+		conn_info         => $conn_info,
 		name              => 'AEPQ',
 		on_connfail       => sub {$event = shift; diag "connfail: " . $event->{reason}; },
 		on_connect_last   => my $connected = AE::cvt,
@@ -64,7 +64,7 @@ ok($success) or BAIL_OUT "setup_postgres_db: $err";
 
 {
 	my $pool; $pool = AnyEvent::PostgreSQL->new(
-		%{$conn_info},
+		conn_info         => $conn_info,
 		name              => 'AEPQ',
 		on_connfail       => sub {$event = shift; diag "connfail: " . $event->{reason}; },
 		on_connect_last   => my $connected = AE::cvt,
@@ -83,7 +83,7 @@ ok($success) or BAIL_OUT "setup_postgres_db: $err";
 
 {
 	my $pool; $pool = AnyEvent::PostgreSQL->new(
-		%{$conn_info},
+		conn_info         => $conn_info,
 		name              => 'AEPQ',
 		on_connfail       => sub {$event = shift; diag "connfail: " . $event->{reason}; },
 		on_connect_last   => my $connected = AE::cvt,

@@ -2,6 +2,7 @@
 use FindBin qw($Bin);
 use lib ("$Bin/../lib", "$Bin/lib");
 use Test::More;
+use Test::Deep;
 
 use Test::AE; # AE::cvt
 use Test::Helper;
@@ -13,21 +14,28 @@ use Data::Dumper;
 use AnyEvent::PostgreSQL;
 
 {
-	my $addr = '127.0.0.1:28761';
+	#my $addr = '127.0.0.1:28761';
+	my $conn_info = {
+		hostaddr => '127.0.0.1',
+		port     => 28761,
+		dbname   => 'testdb',
+		user     => 'PG_USER',
+		password => 'PG_PASS',
+		sslmode  => 'disable',
+	};
+
 	my $pool;
 	$pool = AnyEvent::PostgreSQL->new(
 		name            => 'wrongport',
-		server          => $addr,
-		dbname          => 'testdb',
-		login           => 'PG_USER',
-		password        => 'PG_PASS',
+		conn_info       => $conn_info,
 		connect_timeout => 0.0001,
 		on_connfail     => (my $connfail = AE::cvt),
 	);
-	is($pool->server, $addr, 'new() arg server is stored in object');
-	is($pool->dbname, 'testdb', 'new() arg dbname is stored in object');
-	is($pool->login, 'PG_USER', 'new() arg login is stored in object');
-	is($pool->password, 'PG_PASS', 'new() arg password is stored in object');
+	cmp_deeply($pool->conn_info, $conn_info, 'conn_info structure kept in pool object');
+	#is($pool->server, $addr, 'new() arg server is stored in object');
+	#is($pool->dbname, 'testdb', 'new() arg dbname is stored in object');
+	#is($pool->login, 'PG_USER', 'new() arg login is stored in object');
+	#is($pool->password, 'PG_PASS', 'new() arg password is stored in object');
 	$pool->connect;
 
 	my ($event) = eval {$connfail->recv;}; fail $@ if $@;
@@ -50,10 +58,10 @@ BAIL_OUT('Can not start PostgreSQL server: ' . $Test::postgresql::errstr) unless
 	my $cv_conn_last  = AE::cv {$cv_all->send}; $cv_conn_last->begin;
 	my $conn_info = uri_to_conninfo($pgserv->uri);
 	my $pool; $pool = AnyEvent::PostgreSQL->new(
-		%{$conn_info},
-		name             => 'test1',
-		pool_size        => $pool_size,
-		on_connfail      => sub {
+		conn_info   => $conn_info,
+		name        => 'test1',
+		pool_size   => $pool_size,
+		on_connfail => sub {
 			$event = shift;
 			diag "connection error: " . $event->{reason};
 		},
@@ -84,12 +92,12 @@ BAIL_OUT('Can not start PostgreSQL server: ' . $Test::postgresql::errstr) unless
 	my $cnt_disconnected_first = 0;
 	my $cnt_disconnected_last = 0;
 	my $pool; $pool = AnyEvent::PostgreSQL->new(
-		%{$conn_info},
-		name            => 'test2',
-		pool_size         => $pool_size,
-		on_connfail       => sub {my $event = shift; diag 'connfail: ' . $event->{reason};},
-		on_connect_last   => my $connected = AE::cvt,
-		on_disconnect_one => sub{$cnt_disconnected_one ++},
+		conn_info           => $conn_info,
+		name                => 'test2',
+		pool_size           => $pool_size,
+		on_connfail         => sub {my $event = shift; diag 'connfail: ' . $event->{reason};},
+		on_connect_last     => my $connected = AE::cvt,
+		on_disconnect_one   => sub{$cnt_disconnected_one ++},
 		on_disconnect_first => sub{$cnt_disconnected_first ++},
 		on_disconnect_last  => sub{$cnt_disconnected_last ++; $disconnected->(@_); },
 	);

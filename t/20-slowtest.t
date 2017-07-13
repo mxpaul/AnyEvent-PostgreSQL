@@ -58,7 +58,7 @@ BAIL_OUT('Can not start PostgreSQL server: ' . $Test::postgresql::errstr) unless
 	my ($cnt_connect, $cnt_disconnect) = (0,0);
 	my $cv = AE::cvt 60;
 	my $pool; $pool = AnyEvent::PostgreSQL->new(
-		%{$conn_info},
+		conn_info         => $conn_info,
 		name              => 'test3_reconnect',
 		pool_size         => $pool_size,
 		on_connect_one    => sub { my $desc = shift;
