@@ -40,3 +40,4 @@ makerpm
 \.spec$
 ^tnt_[a-z]{10}
 \.tar\.gz$
+^AnyEvent-PostgreSQL-.*\/.*

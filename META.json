@@ -6,7 +6,7 @@
    "dynamic_config" : 0,
    "generated_by" : "ExtUtils::MakeMaker version 7.1, CPAN::Meta::Converter version 2.150005",
    "license" : [
-      "unknown"
+      "open_source"
    ],
    "meta-spec" : {
       "url" : "http://search.cpan.org/perldoc?CPAN::Meta::Spec",
@@ -22,7 +22,16 @@
    "prereqs" : {
       "build" : {
          "requires" : {
-            "ExtUtils::MakeMaker" : "0"
+            "DBD::Pg" : "0",
+            "DBI" : "0",
+            "Exporter" : "0",
+            "ExtUtils::MakeMaker" : "0",
+            "FindBin" : "0",
+            "Test::Deep" : "0",
+            "Test::Harness" : "0",
+            "Test::More" : "0",
+            "Test::PostgreSQL" : "0",
+            "URI" : "0"
          }
       },
       "configure" : {
@@ -32,11 +41,17 @@
       },
       "runtime" : {
          "requires" : {
-            "AnyEvent::Pg::Pool" : "4"
+            "AnyEvent" : "0",
+            "AnyEvent::Pg" : "0",
+            "Carp" : "0",
+            "Data::Dumper" : "0",
+            "Mouse" : "0",
+            "Pg::PQ" : "0",
+            "Time::HiRes" : "0"
          }
       }
    },
    "release_status" : "stable",
-   "version" : "0.01",
+   "version" : "0.02",
    "x_serialization_backend" : "JSON::PP version 2.27300"
 }
