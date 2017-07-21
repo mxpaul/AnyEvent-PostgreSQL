@@ -17,7 +17,7 @@ sub uri_to_conninfo {
 		port          => $u->port(),
 		dbname        => $dbname,
 		user          => $login,
-		password      => $password//'',
+		($password ? (password => $password) : ()),
 	}
 }
 

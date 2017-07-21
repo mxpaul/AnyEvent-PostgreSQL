@@ -2,4 +2,11 @@ lib/AnyEvent/PostgreSQL.pm
 Makefile.PL
 MANIFEST			This list of files
 MANIFEST.SKIP
+META.json
+META.yml
 t/00-load.t
+t/01-connect.t
+t/02-push_query.t
+t/20-slowtest.t
+t/lib/Test/AE.pm
+t/lib/Test/Helper.pm
