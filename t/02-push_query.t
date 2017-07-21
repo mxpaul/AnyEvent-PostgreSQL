@@ -140,4 +140,23 @@ ok($success) or BAIL_OUT "setup_postgres_db: $err";
 	$cv->end; $cv->recv;
 }
 
+{
+	my ($timeout, $delay) = (0.5, 1);
+	my $pool; $pool = AnyEvent::PostgreSQL->new(
+		conn_info         => $conn_info,
+		name              => 'AEPQ',
+		on_connfail       => sub {$event = shift; diag "connfail: " . $event->{reason}; },
+		on_connect_last   => my $connected = AE::cvt,
+		on_disconnect_one => sub {$event = shift; diag "disconnect: " . $event->{reason}; },
+		request_timeout   => $timeout,
+	);
+	$pool->connect; $connected->recv;
+
+	my $query = [q{SELECT pg_sleep($1)}, $delay];
+	$pool->push_query($query, my $done = AE::cvt $timeout + 1);
+	my ($res, @rest) = $done->recv;
+	cmp_deeply($res, superhashof({error => 1, reason => re(qr/timeout/i)}),
+		'push_query reports timeout') or diag Dumper $res;
+}
+
 done_testing;
