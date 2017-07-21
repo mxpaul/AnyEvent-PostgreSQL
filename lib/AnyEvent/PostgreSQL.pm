@@ -71,6 +71,7 @@ has on_disconnect_last  => (is => 'rw', weak_ref => 0);
 has connect_timeout     => (is => 'rw', default => 1);
 has _pool               => (is => 'rw', default => sub{ [] });
 has pool_size           => (is => 'rw', default => 5);
+has cnn_max_queue_len   => (is => 'rw', default => 5);
 has _connect_cnt        => (is => 'rw');
 has _conn_ok            => (is => 'rw', default => sub{ [] });
 has name                => (is => 'rw', default => 'pgpool');
@@ -174,15 +175,24 @@ sub disconnect{ my $self = shift;
 	$self->_clear_state;
 }
 
+sub available_connectors { my $self = shift;
+	my @available = grep {$_->queue_size() < $self->cnn_max_queue_len} @{$self->{_pool}};
+	return undef unless scalar @available;
+	my $conn = @available[rand scalar @available];
+	return $conn;
+}
+
 sub push_query { my $self = shift;
 	my $query = shift or croak 'need query';
 	my $cb = pop or croak 'Need callback';
-	my @available = grep {$_->queue_size() < 3} @{$self->{_pool}};
-	#if (@available == 0){
-	#	AE::postpone { $cb->({error => 1, reason => 'all connections busy'})};
-	#	return;
-	#}
-	my $conn = @available[rand 0+@available];
+	my $conn = $self->available_connectors;
+	unless (ref $conn){
+		my $reason = sprintf('cnn_max_queue_len=%d: queue limit excided for every of %d connectors',
+			$self->{cnn_max_queue_len}, $self->{pool_size}
+		);
+		AE::postpone { $cb->({error => 1, reason => $reason})};
+		return;
+	}
 	my %state;
 	my $res = {error => 0, fatal => 0, result => []};
 	$state{query} = $conn->push_query(

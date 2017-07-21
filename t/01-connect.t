@@ -33,6 +33,7 @@ use AnyEvent::PostgreSQL;
 	);
 	cmp_deeply($pool->conn_info, $conn_info, 'conn_info structure kept in pool object');
 	$pool->connect;
+	is($pool->cnn_max_queue_len, 5, 'Limit each connector queue length to 5 by default');
 
 	my ($event) = eval {$connfail->recv;}; fail $@ if $@;
 	is(ref $event, 'HASH', 'connfail returns event description as HASH');
