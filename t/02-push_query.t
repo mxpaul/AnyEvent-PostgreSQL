@@ -155,7 +155,7 @@ ok($success) or BAIL_OUT "setup_postgres_db: $err";
 	my $query = [q{SELECT pg_sleep($1)}, $delay];
 	$pool->push_query($query, my $done = AE::cvt $timeout + 1);
 	my ($res, @rest) = $done->recv;
-	cmp_deeply($res, superhashof({error => 1, reason => re(qr/timeout/i)}),
+	cmp_deeply($res, superhashof({error => 1, reason => re(qr/timeout.*$timeout/i)}),
 		'push_query reports timeout') or diag Dumper $res;
 }
 
