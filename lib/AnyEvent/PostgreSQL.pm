@@ -1,5 +1,5 @@
 package AnyEvent::PostgreSQL;
-our $VERSION = 0.02;
+our $VERSION = 0.03;
 
 =head1 NAME
 
@@ -198,7 +198,7 @@ sub push_query { my $self = shift;
 	my %state;
 	$state{timer} = AE::timer $self->{request_timeout}, 0, sub {
 		return unless %state; %state = ();
-		$cb->({error => 1, reason => sprintf('timeout after $f seconds', $self->{request_timeout})});
+		$cb->({error => 1, reason => sprintf('timeout after %f seconds', $self->{request_timeout})});
 	};
 	my $res = {error => 0, fatal => 0, result => []};
 	$state{query} = $conn->push_query(
