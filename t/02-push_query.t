@@ -102,4 +102,61 @@ ok($success) or BAIL_OUT "setup_postgres_db: $err";
 	#diag 'Result array: ' . Dumper $res->{result};
 }
 
+{
+	my ($cnn_total, $query_per_cnn) = (4, 3);
+	my $queue_capacity = $cnn_total * $query_per_cnn;
+	my $pool; $pool = AnyEvent::PostgreSQL->new(
+		conn_info         => $conn_info,
+		name              => 'AEPQ',
+		on_connfail       => sub {$event = shift; diag "connfail: " . $event->{reason}; },
+		on_connect_last   => my $connected = AE::cvt,
+		on_disconnect_one => sub {$event = shift; diag "disconnect: " . $event->{reason}; },
+		pool_size         => $cnn_total,
+		cnn_max_queue_len => $query_per_cnn,
+	);
+	$pool->connect; $connected->recv;
+
+	my $query = [q{select * from test where id = $1}, 1];
+	my $want = superhashof({error => 0, result => ignore()});
+	my $cv = AE::cvt 5; $cv->begin;
+	for my $i (1..$queue_capacity) {
+		$cv->begin;
+		my $cnn = $pool->available_connectors;
+		ok(ref $cnn, "Connector reference available for query $i");
+		$pool->push_query($query, sub { my $res = shift;
+			cmp_deeply($res, $want, "push_query $i select success") or diag Dumper $res;
+			$cv->end;
+		});
+	}
+	$cv->begin;
+	my $cnn = $pool->available_connectors;
+	is($cnn, undef, "Connector reference = undef if all connectors busy");
+	$pool->push_query($query, sub { my $res = shift;
+		my $want = superhashof({error => 1, reason => re(qr/queue.*limit/)});
+		cmp_deeply($res, $want, "push_query informs if there is no available connections")
+			or diag Dumper $res;
+		$cv->end;
+	});
+	$cv->end; $cv->recv;
+}
+
+{
+	my ($timeout, $delay) = (0.5, 1);
+	my $pool; $pool = AnyEvent::PostgreSQL->new(
+		conn_info         => $conn_info,
+		name              => 'AEPQ',
+		on_connfail       => sub {$event = shift; diag "connfail: " . $event->{reason}; },
+		on_connect_last   => my $connected = AE::cvt,
+		on_disconnect_one => sub {$event = shift; diag "disconnect: " . $event->{reason}; },
+		request_timeout   => $timeout,
+	);
+	$pool->connect; $connected->recv;
+
+	my $query = [q{SELECT pg_sleep($1)}, $delay];
+	$pool->push_query($query, my $done = AE::cvt $timeout + 1);
+	my ($res, @rest) = $done->recv;
+	cmp_deeply($res, superhashof({error => 1, reason => re(qr/timeout.*$timeout/i)}),
+		'push_query reports timeout') or diag Dumper $res;
+}
+
 done_testing;

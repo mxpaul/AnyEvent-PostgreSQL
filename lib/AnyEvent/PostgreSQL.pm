@@ -1,5 +1,5 @@
 package AnyEvent::PostgreSQL;
-our $VERSION = 0.02;
+our $VERSION = 0.03;
 
 =head1 NAME
 
@@ -18,8 +18,9 @@ our $VERSION = 0.02;
 			user            => 'PG_USER',
 			password        => 'PG_PASS',
 		},
-		timeout           => 2.0,
-		pool_size         => 5,
+		cnn_max_queue_len => 10, # don't push requests into connector queue if it's length > 10
+		request_timeout   => 2.0, # Cancel request and report error if there is no result after 2 seconds
+		pool_size         => 5, # Create 5 connectors to PostgreSQL server, available to process 5 simultaneous queries
 		on_connect_first  => my $connected = AE::cv,
 		on_disconect_last => sub {
 			my $reason = shift;
@@ -71,6 +72,8 @@ has on_disconnect_last  => (is => 'rw', weak_ref => 0);
 has connect_timeout     => (is => 'rw', default => 1);
 has _pool               => (is => 'rw', default => sub{ [] });
 has pool_size           => (is => 'rw', default => 5);
+has cnn_max_queue_len   => (is => 'rw', default => 5);
+has request_timeout     => (is => 'rw', default => 2);
 has _connect_cnt        => (is => 'rw');
 has _conn_ok            => (is => 'rw', default => sub{ [] });
 has name                => (is => 'rw', default => 'pgpool');
@@ -174,16 +177,29 @@ sub disconnect{ my $self = shift;
 	$self->_clear_state;
 }
 
+sub available_connectors { my $self = shift;
+	my @available = grep {$_->queue_size() < $self->cnn_max_queue_len} @{$self->{_pool}};
+	return undef unless scalar @available;
+	my $conn = @available[rand scalar @available];
+	return $conn;
+}
+
 sub push_query { my $self = shift;
 	my $query = shift or croak 'need query';
 	my $cb = pop or croak 'Need callback';
-	my @available = grep {$_->queue_size() < 3} @{$self->{_pool}};
-	#if (@available == 0){
-	#	AE::postpone { $cb->({error => 1, reason => 'all connections busy'})};
-	#	return;
-	#}
-	my $conn = @available[rand 0+@available];
+	my $conn = $self->available_connectors;
+	unless (ref $conn){
+		my $reason = sprintf('cnn_max_queue_len=%d: queue limit excided for every of %d connectors',
+			$self->{cnn_max_queue_len}, $self->{pool_size}
+		);
+		AE::postpone { $cb->({error => 1, reason => $reason})};
+		return;
+	}
 	my %state;
+	$state{timer} = AE::timer $self->{request_timeout}, 0, sub {
+		return unless %state; %state = ();
+		$cb->({error => 1, reason => sprintf('timeout after %f seconds', $self->{request_timeout})});
+	};
 	my $res = {error => 0, fatal => 0, result => []};
 	$state{query} = $conn->push_query(
 		query     => $query,
